@@ -26,15 +26,18 @@ jobs:
           unzip -q UnityDrift3D_Source.zip
           test -f UnityDrift3D/ProjectSettings/ProjectVersion.txt
 
-      - name: Check Unity license secret
+      - name: Check Unity CI credentials
         shell: bash
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
-          if [ -z "$UNITY_LICENSE" ]; then
-            echo "UNITY_LICENSE secret is missing. Add the full contents of your Unity .ulf license file as repository secret UNITY_LICENSE."
-            exit 1
-          fi
+          missing=0
+          [ -n "$UNITY_LICENSE" ] || { echo "Missing UNITY_LICENSE"; missing=1; }
+          [ -n "$UNITY_EMAIL" ] || { echo "Missing UNITY_EMAIL"; missing=1; }
+          [ -n "$UNITY_PASSWORD" ] || { echo "Missing UNITY_PASSWORD"; missing=1; }
+          exit $missing
 
       - name: Free disk space
         uses: jlumbroso/free-disk-space@main
@@ -59,6 +62,8 @@ jobs:
         uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         with:
           projectPath: UnityDrift3D
           unityVersion: 2022.3.74f1
