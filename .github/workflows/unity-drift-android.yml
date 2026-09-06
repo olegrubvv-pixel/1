@@ -1,0 +1,77 @@
+name: Build Drift Street 3D APK
+
+on:
+  push:
+    branches: [ unity-drift-3d ]
+    paths:
+      - 'UnityDrift3D_Source.zip'
+      - '.github/workflows/unity-drift-android.yml'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Unity Android APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Unity project
+        shell: bash
+        run: |
+          rm -rf UnityDrift3D
+          unzip -q UnityDrift3D_Source.zip
+          test -f UnityDrift3D/ProjectSettings/ProjectVersion.txt
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: false
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: false
+          swap-storage: false
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: UnityDrift3D/Library
+          key: UnityDrift3D-Library-${{ hashFiles('UnityDrift3D_Source.zip') }}
+          restore-keys: |
+            UnityDrift3D-Library-
+
+      - name: Build APK with Unity
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: UnityDrift3D
+          unityVersion: 2022.3.74f1
+          targetPlatform: Android
+          buildName: DriftStreet3D
+          buildsPath: build
+          allowDirtyBuild: true
+
+      - name: Locate APK
+        shell: bash
+        run: |
+          set -e
+          APK=$(find build -type f -name '*.apk' | head -n 1)
+          test -n "$APK"
+          cp "$APK" DriftStreet3D.apk
+          ls -lh DriftStreet3D.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DriftStreet3D-APK
+          path: DriftStreet3D.apk
+          if-no-files-found: error
+          retention-days: 30
