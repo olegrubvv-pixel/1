@@ -35,7 +35,7 @@ public class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        s.setUserAgentString(s.getUserAgentString() + " AIPhoto3D/4.0");
+        s.setUserAgentString(s.getUserAgentString() + " AIPhoto3D/4.1");
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
@@ -75,7 +75,7 @@ public class MainActivity extends Activity {
             @JavascriptInterface public synchronized void finish(){
                 try{
                     closeSave(true);
-                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Ригнутый GLB сохранён в Downloads", Toast.LENGTH_LONG).show());
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Rigged GLB сохранён в Downloads", Toast.LENGTH_LONG).show());
                     notifyJs("window.onNativeSaved", "ok");
                 }catch(Exception e){ notifyJs("window.onNativeSaveError", String.valueOf(e.getMessage())); }
             }
@@ -92,13 +92,36 @@ public class MainActivity extends Activity {
         });
 
         web.setWebChromeClient(new WebChromeClient(){
+            @Override public boolean onConsoleMessage(ConsoleMessage cm){
+                if(cm.messageLevel() == ConsoleMessage.MessageLevel.ERROR){
+                    String msg = cm.message();
+                    if(msg != null && msg.length() > 140) msg = msg.substring(0,140);
+                    final String out = msg;
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "JS: " + out, Toast.LENGTH_LONG).show());
+                }
+                return true;
+            }
+
             @Override public boolean onShowFileChooser(WebView v, ValueCallback<Uri[]> cb, FileChooserParams p){
                 if(fileCallback != null) fileCallback.onReceiveValue(null);
                 fileCallback = cb;
                 try {
-                    Intent intent = p.createIntent();
+                    Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
                     String[] accepts = p.getAcceptTypes();
-                    if(accepts != null && accepts.length == 1 && accepts[0] != null && !accepts[0].isEmpty()) intent.setType(accepts[0]);
+                    boolean image = false;
+                    if(accepts != null){
+                        for(String a: accepts){
+                            if(a != null && a.toLowerCase().contains("image")){ image = true; break; }
+                        }
+                    }
+                    if(image){
+                        intent.setType("image/*");
+                    }else{
+                        intent.setType("*/*");
+                        intent.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"model/gltf-binary","model/gltf+json","application/octet-stream","application/json"});
+                    }
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, p.getMode() == FileChooserParams.MODE_OPEN_MULTIPLE);
                     startActivityForResult(intent, FILE_REQ);
                     return true;
                 } catch(Exception e){
