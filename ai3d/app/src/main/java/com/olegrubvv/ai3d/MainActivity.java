@@ -4,16 +4,20 @@ import android.app.*;
 import android.os.*;
 import android.content.*;
 import android.net.Uri;
+import android.provider.MediaStore;
+import android.util.Base64;
 import android.webkit.*;
 import android.widget.Toast;
+import java.io.*;
 
 public class MainActivity extends Activity {
     private static final int FILE_REQ = 1204;
     private static final String HOME = "file:///android_asset/index.html";
     private static final String GENERATE = "https://tencent-hunyuan3d-2.hf.space";
-    private static final String RIG = "https://jasongzy-make-it-animatable.hf.space";
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
+    private OutputStream saveStream;
+    private Uri saveUri;
 
     @Override public void onCreate(Bundle b) {
         super.onCreate(b);
@@ -25,17 +29,57 @@ public class MainActivity extends Activity {
         s.setDatabaseEnabled(true);
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
+        s.setAllowFileAccessFromFileURLs(true);
+        s.setAllowUniversalAccessFromFileURLs(true);
         s.setMediaPlaybackRequiresUserGesture(false);
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        s.setUserAgentString(s.getUserAgentString() + " AIPhoto3D/3.0");
+        s.setUserAgentString(s.getUserAgentString() + " AIPhoto3D/4.0");
+        CookieManager.getInstance().setAcceptCookie(true);
+        CookieManager.getInstance().setAcceptThirdPartyCookies(web, true);
 
         web.addJavascriptInterface(new Object(){
             @JavascriptInterface public void openGenerate(){ runOnUiThread(() -> web.loadUrl(GENERATE)); }
-            @JavascriptInterface public void openRig(){ runOnUiThread(() -> web.loadUrl(RIG)); }
             @JavascriptInterface public void home(){ runOnUiThread(() -> web.loadUrl(HOME)); }
         }, "AndroidNav");
+
+        web.addJavascriptInterface(new Object(){
+            @JavascriptInterface public synchronized void begin(String filename){
+                try{
+                    closeSave(false);
+                    String safe = filename == null || filename.trim().isEmpty() ? "Rigged_Player.glb" : filename.replaceAll("[^a-zA-Z0-9._-]", "_");
+                    if(!safe.toLowerCase().endsWith(".glb")) safe += ".glb";
+                    if(Build.VERSION.SDK_INT >= 29){
+                        ContentValues v = new ContentValues();
+                        v.put(MediaStore.Downloads.DISPLAY_NAME, safe);
+                        v.put(MediaStore.Downloads.MIME_TYPE, "model/gltf-binary");
+                        v.put(MediaStore.Downloads.IS_PENDING, 1);
+                        saveUri = getContentResolver().insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
+                        if(saveUri == null) throw new IOException("Не удалось создать файл");
+                        saveStream = getContentResolver().openOutputStream(saveUri, "w");
+                    }else{
+                        File dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+                        if(!dir.exists()) dir.mkdirs();
+                        saveStream = new FileOutputStream(new File(dir, safe));
+                    }
+                    if(saveStream == null) throw new IOException("Не удалось открыть файл");
+                }catch(Exception e){ notifyJs("window.onNativeSaveError", String.valueOf(e.getMessage())); }
+            }
+            @JavascriptInterface public synchronized void chunk(String b64){
+                try{
+                    if(saveStream == null) throw new IOException("Файл не открыт");
+                    saveStream.write(Base64.decode(b64, Base64.DEFAULT));
+                }catch(Exception e){ notifyJs("window.onNativeSaveError", String.valueOf(e.getMessage())); }
+            }
+            @JavascriptInterface public synchronized void finish(){
+                try{
+                    closeSave(true);
+                    runOnUiThread(() -> Toast.makeText(MainActivity.this, "Ригнутый GLB сохранён в Downloads", Toast.LENGTH_LONG).show());
+                    notifyJs("window.onNativeSaved", "ok");
+                }catch(Exception e){ notifyJs("window.onNativeSaveError", String.valueOf(e.getMessage())); }
+            }
+        }, "AndroidFiles");
 
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request){
@@ -80,11 +124,23 @@ public class MainActivity extends Activity {
                 ((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(r);
                 Toast.makeText(MainActivity.this, "Файл скачивается в Downloads", Toast.LENGTH_LONG).show();
             } catch(Exception e){
-                try { startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url))); }
-                catch(Exception ignored){ Toast.makeText(MainActivity.this, "Не удалось скачать файл", Toast.LENGTH_LONG).show(); }
+                Toast.makeText(MainActivity.this, "Не удалось скачать файл", Toast.LENGTH_LONG).show();
             }
         });
         web.loadUrl(HOME);
+    }
+
+    private synchronized void closeSave(boolean commit) throws IOException {
+        if(saveStream != null){ saveStream.flush(); saveStream.close(); saveStream = null; }
+        if(Build.VERSION.SDK_INT >= 29 && saveUri != null){
+            if(commit){ ContentValues v = new ContentValues(); v.put(MediaStore.Downloads.IS_PENDING, 0); getContentResolver().update(saveUri, v, null, null); }
+            else getContentResolver().delete(saveUri, null, null);
+            saveUri = null;
+        }
+    }
+
+    private void notifyJs(String fn, String msg){
+        runOnUiThread(() -> web.evaluateJavascript(fn + "(" + org.json.JSONObject.quote(msg) + ")", null));
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data){
