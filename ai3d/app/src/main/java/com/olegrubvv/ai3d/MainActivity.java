@@ -9,7 +9,9 @@ import android.widget.Toast;
 
 public class MainActivity extends Activity {
     private static final int FILE_REQ = 1204;
-    private static final String APP_URL = "https://tencent-hunyuan3d-2.hf.space";
+    private static final String HOME = "file:///android_asset/index.html";
+    private static final String GENERATE = "https://tencent-hunyuan3d-2.hf.space";
+    private static final String RIG = "https://jasongzy-make-it-animatable.hf.space";
     private WebView web;
     private ValueCallback<Uri[]> fileCallback;
 
@@ -17,7 +19,6 @@ public class MainActivity extends Activity {
         super.onCreate(b);
         web = new WebView(this);
         setContentView(web);
-
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
@@ -28,13 +29,19 @@ public class MainActivity extends Activity {
         s.setLoadWithOverviewMode(true);
         s.setUseWideViewPort(true);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);
-        s.setUserAgentString(s.getUserAgentString() + " AIPhoto3D/2.0");
+        s.setUserAgentString(s.getUserAgentString() + " AIPhoto3D/3.0");
+
+        web.addJavascriptInterface(new Object(){
+            @JavascriptInterface public void openGenerate(){ runOnUiThread(() -> web.loadUrl(GENERATE)); }
+            @JavascriptInterface public void openRig(){ runOnUiThread(() -> web.loadUrl(RIG)); }
+            @JavascriptInterface public void home(){ runOnUiThread(() -> web.loadUrl(HOME)); }
+        }, "AndroidNav");
 
         web.setWebViewClient(new WebViewClient(){
             @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request){
                 Uri u = request.getUrl();
                 String scheme = u.getScheme();
-                if("http".equals(scheme) || "https".equals(scheme)) return false;
+                if("http".equals(scheme) || "https".equals(scheme) || "file".equals(scheme)) return false;
                 try { startActivity(new Intent(Intent.ACTION_VIEW, u)); } catch(Exception ignored) {}
                 return true;
             }
@@ -46,12 +53,13 @@ public class MainActivity extends Activity {
                 fileCallback = cb;
                 try {
                     Intent intent = p.createIntent();
-                    intent.setType("image/*");
+                    String[] accepts = p.getAcceptTypes();
+                    if(accepts != null && accepts.length == 1 && accepts[0] != null && !accepts[0].isEmpty()) intent.setType(accepts[0]);
                     startActivityForResult(intent, FILE_REQ);
                     return true;
                 } catch(Exception e){
                     fileCallback = null;
-                    Toast.makeText(MainActivity.this, "Не удалось открыть галерею", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Не удалось открыть файл", Toast.LENGTH_SHORT).show();
                     return false;
                 }
             }
@@ -67,7 +75,7 @@ public class MainActivity extends Activity {
                 String name = URLUtil.guessFileName(url, contentDisposition, mimeType);
                 if(name == null || name.trim().isEmpty()) name = "AI_3D_" + System.currentTimeMillis() + ".glb";
                 r.setTitle(name);
-                r.setDescription("Скачивание 3D-модели");
+                r.setDescription("Скачивание 3D-файла");
                 r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
                 ((DownloadManager)getSystemService(DOWNLOAD_SERVICE)).enqueue(r);
                 Toast.makeText(MainActivity.this, "Файл скачивается в Downloads", Toast.LENGTH_LONG).show();
@@ -76,8 +84,7 @@ public class MainActivity extends Activity {
                 catch(Exception ignored){ Toast.makeText(MainActivity.this, "Не удалось скачать файл", Toast.LENGTH_LONG).show(); }
             }
         });
-
-        web.loadUrl(APP_URL);
+        web.loadUrl(HOME);
     }
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data){
@@ -89,15 +96,15 @@ public class MainActivity extends Activity {
                 int n = data.getClipData().getItemCount();
                 result = new Uri[n];
                 for(int i=0;i<n;i++) result[i] = data.getClipData().getItemAt(i).getUri();
-            } else if(data.getData() != null){
-                result = new Uri[]{data.getData()};
-            }
+            } else if(data.getData() != null) result = new Uri[]{data.getData()};
         }
         fileCallback.onReceiveValue(result);
         fileCallback = null;
     }
 
     @Override public void onBackPressed(){
-        if(web.canGoBack()) web.goBack(); else super.onBackPressed();
+        String u = web.getUrl();
+        if(u != null && !u.equals(HOME)) web.loadUrl(HOME);
+        else super.onBackPressed();
     }
 }
