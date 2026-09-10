@@ -1,0 +1,83 @@
+name: Build Forest Rush APK
+
+on:
+  push:
+    branches: [forest-rush-build]
+    paths:
+      - 'ForestRush/**'
+      - '.github/workflows/forest-rush-apk.yml'
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y blender
+          blender --version | head -1
+
+      - name: Generate Blender GLB assets
+        run: blender --background --python ForestRush/tools/generate_assets.py
+
+      - name: Set up Godot
+        uses: chickensoft-games/setup-godot@v2
+        with:
+          version: 4.4.1
+          use-dotnet: false
+          include-templates: true
+
+      - name: Configure Godot Android SDK
+        run: |
+          mkdir -p ~/.config/godot ~/.android
+          keytool -genkeypair -v \
+            -keystore ~/.android/debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US" || true
+          cat > ~/.config/godot/editor_settings-4.4.tres <<EOF2
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF2
+
+      - name: Import Godot project
+        working-directory: ForestRush
+        run: godot --headless --import --quit
+
+      - name: Export debug APK
+        working-directory: ForestRush
+        env:
+          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: ${{ github.workspace }}/.android-debug.keystore
+          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
+          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
+        run: |
+          cp ~/.android/debug.keystore "${{ github.workspace }}/.android-debug.keystore"
+          mkdir -p build
+          godot --headless --export-debug "Android" build/ForestRush-debug.apk
+          test -f build/ForestRush-debug.apk
+          ls -lh build/ForestRush-debug.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ForestRush-Android-APK
+          path: ForestRush/build/ForestRush-debug.apk
+          if-no-files-found: error
