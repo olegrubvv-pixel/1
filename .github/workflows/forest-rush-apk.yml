@@ -4,7 +4,7 @@ on:
   push:
     branches: [forest-rush-build]
     paths:
-      - 'ForestRush/**'
+      - 'ForestRush_Godot_Project.zip'
       - '.github/workflows/forest-rush-apk.yml'
   workflow_dispatch:
 
@@ -15,6 +15,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Unpack Forest Rush project
+        run: |
+          rm -rf ForestRush
+          unzip -q ForestRush_Godot_Project.zip
+          test -f ForestRush/project.godot
+          test -f ForestRush/tools/generate_assets.py
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
