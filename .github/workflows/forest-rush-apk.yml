@@ -8,6 +8,9 @@ on:
       - '.github/workflows/forest-rush-apk.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-android:
     runs-on: ubuntu-latest
@@ -32,11 +35,17 @@ jobs:
       - name: Install Blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y blender
+          sudo apt-get install -y blender python3-numpy
           blender --version | head -1
 
       - name: Generate Blender GLB assets
-        run: blender --background --python ForestRush/tools/generate_assets.py
+        run: |
+          blender --background --python ForestRush/tools/generate_assets.py
+          test -f ForestRush/assets/models/tree.glb
+          test -f ForestRush/assets/models/rock.glb
+          test -f ForestRush/assets/models/log.glb
+          test -f ForestRush/assets/models/bush.glb
+          test -f ForestRush/assets/models/coin.glb
 
       - name: Set up Godot
         uses: chickensoft-games/setup-godot@v2
@@ -78,13 +87,24 @@ jobs:
         run: |
           cp ~/.android/debug.keystore "${{ github.workspace }}/.android-debug.keystore"
           mkdir -p build
-          godot --headless --export-debug "Android" build/ForestRush-debug.apk
+          godot --headless --verbose --export-debug "Android" build/ForestRush-debug.apk
           test -f build/ForestRush-debug.apk
           ls -lh build/ForestRush-debug.apk
 
-      - name: Upload APK
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: ForestRush-Android-APK
           path: ForestRush/build/ForestRush-debug.apk
           if-no-files-found: error
+
+      - name: Publish APK on build branch
+        run: |
+          cp ForestRush/build/ForestRush-debug.apk ForestRush-debug.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -f ForestRush-debug.apk
+          if ! git diff --cached --quiet; then
+            git commit -m "Update Forest Rush APK [skip ci]"
+          fi
+          git push origin HEAD:forest-rush-build
