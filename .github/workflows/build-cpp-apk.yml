@@ -31,7 +31,6 @@ jobs:
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort | tail -1)"
           if [ -z "$SDKMANAGER" ]; then
             echo "sdkmanager not found under $ANDROID_HOME"
-            find "$ANDROID_HOME" -maxdepth 4 -type f -name sdkmanager -print || true
             exit 1
           fi
           yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
@@ -73,9 +72,10 @@ jobs:
           s=s.replace('$(CC) -c $^ -o $@ $(INCLUDE_PATHS) $(CFLAGS)',
                       '$(CXX) -c $^ -o $@ $(INCLUDE_PATHS) $(CFLAGS)')
           s=s.replace('-std=c99','-std=c++17')
+          s += '\nLDFLAGS += -Wl,--wrap=fopen\n'
           open(p,'w',encoding='utf-8').write(s)
           PY
-          grep -n "%.cpp\|CXX\|std=c++17" Makefile.Android | tail -20
+          tail -8 Makefile.Android
 
       - name: Build APK
         shell: bash
