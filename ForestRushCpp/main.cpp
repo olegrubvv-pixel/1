@@ -222,8 +222,8 @@ static void DrawTree(const Tree &tr, float worldZ) {
     float s=tr.scale;
     DrawShadow(Vector3{tr.x,0,worldZ},0.72f*s,0.16f);
     DrawCylinder(Vector3{tr.x,1.25f*s,worldZ},0.23f*s,0.34f*s,2.5f*s,8,trunk);
-    DrawCone(Vector3{tr.x,2.15f*s,worldZ},1.10f*s,2.15f*s,10,leaf1);
-    DrawCone(Vector3{tr.x+0.12f*s,2.85f*s,worldZ-0.05f},0.88f*s,1.75f*s,10,leaf2);
+    DrawCylinder(Vector3{tr.x,2.15f*s,worldZ},0.0f,1.10f*s,2.15f*s,10,leaf1);
+    DrawCylinder(Vector3{tr.x+0.12f*s,2.85f*s,worldZ-0.05f},0.0f,0.88f*s,1.75f*s,10,leaf2);
     DrawSphere(Vector3{tr.x-0.45f*s,2.75f*s,worldZ+0.05f},0.48f*s,leaf1);
     DrawSphere(Vector3{tr.x+0.50f*s,2.55f*s,worldZ-0.08f},0.42f*s,leaf2);
 }
