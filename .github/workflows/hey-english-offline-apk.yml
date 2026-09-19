@@ -1,0 +1,94 @@
+name: Build HEY English Offline APK
+
+on:
+  push:
+    branches:
+      - chatgpt-hey-english-apk-20260919
+    paths:
+      - 'hey-english/**'
+      - '.github/workflows/hey-english-offline-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build fully offline dictionary asset
+        working-directory: hey-english
+        run: python3 prepare.py
+
+      - name: Verify dictionary and runtime offline guarantees
+        working-directory: hey-english
+        run: |
+          python3 - <<'PY'
+          import json,re
+          from pathlib import Path
+          a=json.loads(Path("dictionary_audit.json").read_text(encoding="utf-8"))
+          h=Path("app/src/main/assets/index.html").read_text(encoding="utf-8")
+          assert a["total_words"] == 7500
+          assert a["unique_words"] == 7500
+          assert a["network_fetch_calls"] == 0
+          assert a["http_urls"] == 0
+          assert not re.search(r"\bfetch\s*\(",h)
+          assert not re.search(r"https?://",h)
+          assert "EXTENDED_URL" not in h
+          assert "localStorage.setItem" in h
+          print("HTML audit OK:", a)
+          PY
+
+      - name: Assemble installable APK
+        working-directory: hey-english
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Verify APK has no Internet permission and contains local dictionary
+        working-directory: hey-english
+        run: |
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          test -f "$APK"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump permissions "$APK" | tee apk-permissions.txt
+          if grep -q "android.permission.INTERNET" apk-permissions.txt; then
+            echo "ERROR: INTERNET permission found"
+            exit 1
+          fi
+          unzip -l "$APK" | tee apk-files.txt
+          grep -q "assets/index.html" apk-files.txt
+          cp "$APK" HEY_English_Offline_7500.apk
+          sha256sum HEY_English_Offline_7500.apk | tee apk-sha256.txt
+
+      - name: Upload final APK and audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: HEY-English-Offline-7500
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            hey-english/HEY_English_Offline_7500.apk
+            hey-english/dictionary_audit.json
+            hey-english/apk-permissions.txt
+            hey-english/apk-sha256.txt
