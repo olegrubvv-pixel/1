@@ -34,7 +34,7 @@ jobs:
           sdkmanager --version
 
       - name: Install Android platform
-        run: yes | sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |\n          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)\n          yes | "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
