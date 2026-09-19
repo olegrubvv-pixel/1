@@ -258,7 +258,7 @@ def clean_backup_translation(value):
     return t
 
 def translation_ok(t):
-    if not t or len(t) < 2 or len(t) > 160:
+    if not t or len(t) > 160:
         return False
     if not re.search(r"[А-Яа-яЁё]", t):
         return False
