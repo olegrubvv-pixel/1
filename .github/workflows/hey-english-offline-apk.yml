@@ -70,6 +70,13 @@ jobs:
           print("HTML audit OK:", a)
           PY
 
+      - name: Prepare English launcher icon
+        working-directory: hey-english
+        run: |
+          mkdir -p app/src/main/res/drawable
+          cat ../chatgpt-assets/english-icon-small/part*.b64 | tr -d '\n\r' | base64 -d > app/src/main/res/drawable/app_icon.jpg
+          echo "a9db453783734ea52fb445d7a1af09dfccb95ad8f06bf2c7cd67b46f8d4d8c60  app/src/main/res/drawable/app_icon.jpg" | sha256sum -c -
+
       - name: Assemble installable APK
         working-directory: hey-english
         run: gradle --no-daemon :app:assembleDebug
@@ -87,8 +94,10 @@ jobs:
           fi
           unzip -l "$APK" | tee apk-files.txt
           grep -q "assets/index.html" apk-files.txt
-          cp "$APK" HEY_English_Offline_7500.apk
-          sha256sum HEY_English_Offline_7500.apk | tee apk-sha256.txt
+          "$AAPT" dump badging "$APK" | tee apk-badging.txt
+          grep -q "application-label:'English'" apk-badging.txt
+          cp "$APK" English_Offline_7500.apk
+          sha256sum English_Offline_7500.apk | tee apk-sha256.txt
 
       - name: Upload final APK and audit
         uses: actions/upload-artifact@v4
@@ -97,7 +106,7 @@ jobs:
           if-no-files-found: error
           retention-days: 30
           path: |
-            hey-english/HEY_English_Offline_7500.apk
+            hey-english/English_Offline_7500.apk
             hey-english/dictionary_audit.json
             hey-english/apk-permissions.txt
             hey-english/apk-sha256.txt
