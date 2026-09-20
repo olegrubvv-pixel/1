@@ -309,6 +309,149 @@ def patch_html(source, full_words):
         source = source.replace(persist_hook, 'window.addEventListener("freeze",flushPersistentState);\n' + persist_hook, 1)
     return source
 
+
+# ---------- Strict v2 dictionary validation ----------
+STRICT_REJECT = {
+    "advertisement","advertisements","homepage","webpage","webpages","webmaster",
+    "javascript","stylesheet","checkbox","dropdown","toolbar","webcam","webcast",
+    "shareware","freeware","firmware","middleware","localhost",
+}
+
+def strict_word(raw):
+    original = str(raw or "").strip()
+    if not original:
+        return ""
+    if original[:1].isupper() and original.lower() not in {"i"}:
+        return ""
+    if original.isupper():
+        return ""
+    w = normalize_word(original)
+    if w in BANNED or w in STRICT_REJECT:
+        return ""
+    if len(w) < 3 or len(w) > 24:
+        return ""
+    if not re.fullmatch(r"[a-z]+(?:-[a-z]+)?", w):
+        return ""
+    if "--" in w or w.startswith("-") or w.endswith("-"):
+        return ""
+    letters = w.replace("-", "")
+    if not re.search(r"[aeiouy]", letters):
+        return ""
+    return w
+
+def strip_wiki_markup(value):
+    t = html_lib.unescape(str(value or ""))
+    t = t.replace("\x00", " ")
+    t = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", t)
+    t = re.sub(r"(?i)<br\s*/?>|</p>|</div>|</li>|</tr>|</h\d>", "; ", t)
+    t = re.sub(r"(?s)<[^>]+>", " ", t)
+    for _ in range(4):
+        prev=t
+        t = re.sub(r"\[\[[^\[\]|]*\|([^\[\]]+)\]\]", r"\1", t)
+        t = re.sub(r"\[\[([^\[\]]+)\]\]", r"\1", t)
+        t = re.sub(r"\{\{[^{}]*\}\}", " ", t)
+        if t==prev:
+            break
+    t = re.sub(r"\[(?:https?://|//)[^\]\s]+(?:\s+([^\]]+))?\]", lambda m: m.group(1) or " ", t)
+    t = t.replace("'''"," ").replace("''"," ")
+    t = re.sub(r"(?i)#(?:русский|russian|english)\b", " ", t)
+    t = re.sub(r"(?i)\b(?:Russian|English|translation|translations|noun|verb|adjective|adverb|pronoun|preposition|conjunction|interjection|proper noun)\b\s*:?", " ", t)
+    t = re.sub(r"[\r\n\t]+", "; ", t)
+    t = re.sub(r"\s+", " ", t)
+    return t.strip(" ;,:.-")
+
+def strict_clean_translation(value):
+    t = strip_wiki_markup(value)
+    if not t:
+        return ""
+    t = re.sub(r"\([^)]*[A-Za-z][^)]*\)", " ", t)
+    t = re.sub(r"\[[^\]]*\]", " ", t)
+    t = re.sub(r"\{[^}]*\}", " ", t)
+    t = re.sub(r"\s+", " ", t).strip(" ;,:.-")
+    pieces = re.split(r"\s*[;|•]\s*|\s+/+\s*", t)
+    clean=[]
+    for p in pieces:
+        p=re.sub(r"\s+"," ",p).strip(" ;,:.-")
+        if not p or len(p)>90:
+            continue
+        if not re.search(r"[А-Яа-яЁё]",p):
+            continue
+        if re.search(r"[\[\]{}<>#=]|&#|https?://|www\.",p,re.I):
+            continue
+        if re.search(r"[A-Za-z]{2,}",p):
+            continue
+        if p.count("(")!=p.count(")") or p.count("[")!=p.count("]"):
+            continue
+        if re.search(r"[(\[,;:/-]\s*$",p):
+            continue
+        letters=re.findall(r"[A-Za-zА-Яа-яЁё]",p)
+        if letters:
+            cy=sum(bool(re.match(r"[А-Яа-яЁё]",x)) for x in letters)
+            if cy/len(letters)<0.90:
+                continue
+        if p not in clean:
+            clean.append(p)
+        if len(clean)>=4:
+            break
+    out="; ".join(clean).strip(" ;,")
+    if len(out)>150:
+        out=out[:150].rsplit(" ",1)[0].rstrip(" ,;:.")+"…"
+    return out
+
+def ru_stems(t):
+    stop={"это","или","как","для","при","что","кто","тот","эта","эти","его","ее","её","они","она","оно","быть","есть"}
+    words=re.findall(r"[а-яё]{3,}",str(t or "").lower())
+    return {w[:5] for w in words if w not in stop}
+
+def strict_translation_ok(t):
+    if not t or len(t)<2 or len(t)>160:
+        return False
+    if not re.search(r"[А-Яа-яЁё]",t):
+        return False
+    if re.search(r"[\[\]{}<>#=]|&#|https?://|www\.|_{2,}",t,re.I):
+        return False
+    if re.search(r"\b(?:XXX|ХХХ|перевод|транскрипц|undefined|null)\b",t,re.I):
+        return False
+    if re.search(r"[A-Za-z]{2,}",t):
+        return False
+    if t.count("(")!=t.count(")") or t.count("[")!=t.count("]"):
+        return False
+    if re.search(r"[(\[,;:/-]\s*$",t):
+        return False
+    return True
+
+def pick_translation(word, top_raw, wik_raw, backup_raw):
+    if word in OVERRIDES:
+        v=OVERRIDES[word]
+        special={
+            "gonna":"разговорное: собираюсь; буду",
+            "wanna":"разговорное: хотеть",
+            "gotta":"разговорное: нужно; должен"
+        }
+        v=special.get(word,v)
+        return v,"override","curated"
+
+    vals=[]
+    for src,raw in (("top",top_raw),("wikdict",wik_raw),("backup",backup_raw)):
+        v=strict_clean_translation(raw)
+        if strict_translation_ok(v):
+            vals.append((src,v,ru_stems(v)))
+
+    for i in range(len(vals)):
+        for j in range(i+1,len(vals)):
+            if vals[i][2] and vals[j][2] and vals[i][2].intersection(vals[j][2]):
+                pair=[vals[i],vals[j]]
+                pair.sort(key=lambda x:(0 if x[0]=="wikdict" else 1,len(x[1])))
+                return pair[0][1],pair[0][0],"cross_source"
+
+    for src,v,_ in vals:
+        if src=="wikdict":
+            return v,src,"single_source"
+    for src,v,_ in vals:
+        if src=="backup" and len(v)<=70:
+            return v,src,"single_source"
+    return "","","rejected"
+
 def main():
     source = SOURCE_HTML.read_text(encoding="utf-8")
     m = re.search(r"const BASE_WORDS=(\[.*?\]);\nconst LEVELS", source, re.S)
@@ -317,139 +460,133 @@ def main():
     base = json.loads(m.group(1))
     if len(base) != 1000:
         raise RuntimeError("Expected 1000 curated base words, got %d" % len(base))
-    # Normalize the single explanatory AmE marker in base so audit stays Cyrillic-only.
     for item in base:
         if item.get("en") == "fall":
             item["ru"] = "падать; осень"
-    base_seen = {normalize_word(x["en"]) for x in base}
+    base_seen={normalize_word(x["en"]) for x in base}
+    if len(base_seen)!=len(base):
+        raise RuntimeError("Duplicate word in curated 1000-word base")
 
     print("Downloading frequency list...")
-    top = json.loads(fetch_bytes(TOP_URL).decode("utf-8"))
+    top=json.loads(fetch_bytes(TOP_URL).decode("utf-8"))
     print("Downloading WikDict English-Russian...")
-    wik_raw = parse_stardict(fetch_bytes(WIKDICT_URL))
-    wik = {k: clean_wikdict_definition(v) for k,v in wik_raw.items()}
-    print("WikDict entries:", len(wik_raw), "clean:", sum(1 for v in wik.values() if v))
-    print("Downloading backup learner vocabulary...")
-    backup_rows = json.loads(fetch_bytes(BACKUP_URL).decode("utf-8"))
-    backup = {}
+    wik_raw=parse_stardict(fetch_bytes(WIKDICT_URL))
+    print("Downloading independent backup vocabulary...")
+    backup_rows=json.loads(fetch_bytes(BACKUP_URL).decode("utf-8"))
+    backup={}
     for row in backup_rows:
-        w = normalize_word(row.get("en"))
+        w=normalize_word(row.get("en"))
         if w and w not in backup:
-            c = clean_backup_translation(row.get("ru"))
-            if c:
-                backup[w] = c
+            backup[w]=row.get("ru","")
 
-    selected = []
-    seen = set(base_seen)
-    source_counts = {"override":0,"wikdict":0,"backup":0}
+    selected=[]
+    seen=set(base_seen)
+    source_counts={"override":0,"top":0,"wikdict":0,"backup":0}
+    confidence_counts={"curated":0,"cross_source":0,"single_source":0}
+    rejected={"invalid_word":0,"duplicate":0,"no_clean_translation":0}
+    selected_ranks=[]
 
-    def add(word, preferred=None):
-        w = normalize_word(word)
-        if w in seen or not valid_word(w):
-            return False
-        ru = OVERRIDES.get(w, "")
-        src = "override"
-        if not ru:
-            ru = wik.get(w, "")
-            src = "wikdict"
-        if not translation_ok(ru):
-            ru = backup.get(w, "")
-            src = "backup"
-        if not translation_ok(ru):
-            return False
-        if re.search(r"[A-Za-z]{3,}", ru):
-            # Only explicit conversational notes are allowed to contain Latin text.
-            if w not in {"gonna","wanna","gotta"}:
-                return False
+    for rank,row in enumerate(top,1):
+        raw_word=row.get("word","")
+        w=strict_word(raw_word)
+        if not w:
+            rejected["invalid_word"]+=1
+            continue
+        if w in seen:
+            rejected["duplicate"]+=1
+            continue
+        ru,src,conf=pick_translation(w,row.get("translation",""),wik_raw.get(w,""),backup.get(w,""))
+        if not strict_translation_ok(ru):
+            rejected["no_clean_translation"]+=1
+            continue
+        idx=len(base)+len(selected)
+        level="A1" if idx<1500 else "A2" if idx<3000 else "B1" if idx<5000 else "B2"
         selected.append({"en":w,"ru":ru,"cat":"US словарь"})
+        selected_ranks.append({"word":w,"source_rank":rank,"output_rank":idx+1,"level":level,"translation_source":src,"confidence":conf})
         seen.add(w)
-        source_counts[src] += 1
-        return True
-
-    # Use the original top-10k only as an ordering signal, never as a translation source.
-    for row in top:
-        add(row.get("word"))
-        if len(base) + len(selected) >= TARGET_WORDS:
+        source_counts[src]+=1
+        confidence_counts[conf]+=1
+        if len(base)+len(selected)>=TARGET_WORDS:
             break
 
-    # Add useful American phrases before less frequent fallback words.
-    if len(base) + len(selected) < TARGET_WORDS:
-        for w in OVERRIDES:
-            add(w)
-            if len(base) + len(selected) >= TARGET_WORDS:
-                break
+    if len(base)+len(selected)<TARGET_WORDS:
+        raise RuntimeError("Frequency source did not provide enough clean entries: %d/%d" % (len(base)+len(selected),TARGET_WORDS))
 
-    # Fill remaining slots from learner vocabulary order, but translations still prefer WikDict.
-    if len(base) + len(selected) < TARGET_WORDS:
-        for row in backup_rows:
-            add(row.get("en"))
-            if len(base) + len(selected) >= TARGET_WORDS:
-                break
+    full=base+selected[:TARGET_WORDS-len(base)]
+    keys=[normalize_word(x["en"]) for x in full]
+    if len(full)!=TARGET_WORDS or len(set(keys))!=TARGET_WORDS:
+        raise RuntimeError("Final size/uniqueness check failed")
 
-    # Last fallback: WikDict alphabetic entries, still heavily filtered.
-    if len(base) + len(selected) < TARGET_WORDS:
-        for w in sorted(wik):
-            add(w)
-            if len(base) + len(selected) >= TARGET_WORDS:
-                break
+    expected={"A0":500,"A1":1000,"A2":1500,"B1":2000,"B2":2500}
+    actual={"A0":0,"A1":0,"A2":0,"B1":0,"B2":0}
+    for i in range(len(full)):
+        lv="A0" if i<500 else "A1" if i<1500 else "A2" if i<3000 else "B1" if i<5000 else "B2"
+        actual[lv]+=1
+    if actual!=expected:
+        raise RuntimeError("Level counts changed: %r" % actual)
 
-    full = base + selected[:TARGET_WORDS-len(base)]
-    if len(full) != TARGET_WORDS:
-        raise RuntimeError("Only %d clean unique entries available" % len(full))
-
-    # Final audits.
-    keys = [normalize_word(x["en"]) for x in full]
-    if len(set(keys)) != TARGET_WORDS:
-        raise RuntimeError("Duplicate English entries remain")
-    bad = []
-    for i, item in enumerate(full, 1):
-        en = str(item.get("en",""))
-        ru = str(item.get("ru",""))
-        flags = []
-        if not en.strip(): flags.append("empty_en")
-        if not translation_ok(ru): flags.append("bad_ru")
-        if re.search(r"[{}|=#<>]|&#", ru): flags.append("markup")
-        if re.search(r"\b(?:XXX|ХХХ|перевод=)\b", ru, re.I): flags.append("garbage")
+    suspicious=[]
+    for i,item in enumerate(full,1):
+        en=str(item.get("en","")).strip()
+        ru=str(item.get("ru","")).strip()
+        flags=[]
+        if not en: flags.append("empty_en")
+        if i>1000 and not strict_word(en): flags.append("invalid_extended_word")
+        if not strict_translation_ok(ru): flags.append("bad_translation")
+        if re.search(r"[\[\]{}<>#=]|&#|https?://|www\.|_{2,}",ru,re.I): flags.append("markup")
+        if re.search(r"[A-Za-z]{2,}",ru): flags.append("latin_leak")
+        if ru.count("(")!=ru.count(")"): flags.append("broken_parentheses")
         if flags:
-            bad.append({"index":i,"en":en,"ru":ru,"flags":flags})
-    if bad:
-        raise RuntimeError("Final dictionary audit failed: %s" % bad[:5])
+            suspicious.append({"index":i,"en":en,"ru":ru,"flags":flags})
+    if suspicious:
+        raise RuntimeError("Strict final audit failed: %s" % suspicious[:10])
 
-    final_html = patch_html(source, full)
-    # Absolute runtime-offline guarantees for the web layer.
-    forbidden = []
-    if re.search(r"\bfetch\s*\(", final_html):
-        forbidden.append("fetch")
-    if re.search(r"https?://", final_html):
-        forbidden.append("http_url")
-    if "EXTENDED_URL" in final_html or "CACHE_KEY" in final_html:
-        forbidden.append("online_dictionary_symbols")
+    final_html=patch_html(source,full)
+    forbidden=[]
+    if re.search(r"\bfetch\s*\(",final_html): forbidden.append("fetch")
+    if re.search(r"https?://",final_html): forbidden.append("http_url")
+    if "EXTENDED_URL" in final_html or "CACHE_KEY" in final_html: forbidden.append("online_dictionary_symbols")
     if forbidden:
-        raise RuntimeError("Final HTML still contains network dependency: " + ", ".join(forbidden))
+        raise RuntimeError("Final HTML still contains network dependency: "+", ".join(forbidden))
 
-    OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
-    OUT_HTML.write_text(final_html, encoding="utf-8")
-    digest = hashlib.sha256(final_html.encode("utf-8")).hexdigest()
-    audit = {
-        "total_words": len(full),
-        "base_words": len(base),
-        "added_words": len(full)-len(base),
-        "unique_words": len(set(keys)),
-        "source_counts": source_counts,
-        "network_fetch_calls": len(re.findall(r"\bfetch\s*\(", final_html)),
-        "http_urls": len(re.findall(r"https?://", final_html)),
-        "runtime_dictionary_download": False,
-        "storage": {
+    OUT_HTML.parent.mkdir(parents=True,exist_ok=True)
+    OUT_HTML.write_text(final_html,encoding="utf-8")
+    digest=hashlib.sha256(final_html.encode("utf-8")).hexdigest()
+
+    rank_gaps=[]
+    prev=None
+    for x in selected_ranks:
+        if prev is not None:
+            rank_gaps.append(x["source_rank"]-prev)
+        prev=x["source_rank"]
+
+    audit={
+        "audit_version":"strict-v2",
+        "total_words":len(full),
+        "unique_words":len(set(keys)),
+        "level_counts":actual,
+        "extended_words":len(selected),
+        "source_counts":source_counts,
+        "confidence_counts":confidence_counts,
+        "rejected_candidates":rejected,
+        "selection_strategy":"frequency-order; invalid/duplicate entries replaced by the next clean neighboring-frequency word in the same output level",
+        "last_selected_source_rank":selected_ranks[-1]["source_rank"],
+        "max_neighbor_rank_gap":max(rank_gaps or [0]),
+        "suspicious_after_final_audit":0,
+        "network_fetch_calls":len(re.findall(r"\bfetch\s*\(",final_html)),
+        "http_urls":len(re.findall(r"https?://",final_html)),
+        "runtime_dictionary_download":False,
+        "storage":{
             "learned_words":"localStorage:hey_learned",
             "notebook":"localStorage:hey_notebook_folders_v3",
             "app_state":"localStorage:hey_app_state_v4"
         },
-        "sha256_index_html": digest,
-        "first_added": selected[:20],
-        "last_words": full[-20:]
+        "sha256_index_html":digest,
+        "sample_first_extended":selected_ranks[:25],
+        "sample_last_extended":selected_ranks[-25:]
     }
-    AUDIT.write_text(json.dumps(audit, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(json.dumps(audit, ensure_ascii=False, indent=2))
+    AUDIT.write_text(json.dumps(audit,ensure_ascii=False,indent=2),encoding="utf-8")
+    print(json.dumps(audit,ensure_ascii=False,indent=2))
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
