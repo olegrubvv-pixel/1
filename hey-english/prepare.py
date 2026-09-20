@@ -635,6 +635,8 @@ def main():
         if tw and tw not in top_map:
             top_map[tw]=row.get("translation","")
 
+    person_names=load_person_names()
+
     selected=[]
     seen=set(base_seen)
     source_counts={"override":0,"top":0,"wikdict":0,"backup":0}
