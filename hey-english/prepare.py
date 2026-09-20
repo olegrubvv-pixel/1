@@ -332,7 +332,7 @@ AMERICAN.update({
     "enrol":"enroll","enrolment":"enrollment","aluminium":"aluminum",
     "gaol":"jail","mould":"mold","plough":"plow"
 })
-BRITISH_ONLY={"petrol","lorry","postcode","mack"}
+BRITISH_ONLY={"petrol","lorry","postcode","mack"}\nNAMES_URL = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/names.zip"\nCOMMON_NAME_WORDS={"will","bill","mark","rose","grace","hope","faith","joy","summer","may","april","june","august","hunter","mason","grant","frank","victor","robin","dawn","crystal","amber","pearl","violet","lily","olive","cherry","clay","dean","dale","lance","drew","chase","sky","river","brook","melody","harmony","charity","patience","angel","art","ray","gene","jean","cliff","forest","wood","stone","reed","lane","candy","ginger","holly","ivy","iris","jasmine","hazel","ruby","opal","autumn","winter"}
 
 OVERRIDES.update({
     "the":"этот; тот; определённый артикль",
@@ -386,7 +386,33 @@ OVERRIDES.update({
     "cunt":"крайне грубое: женские гениталии; оскорбление"
 })
 
-# ---------- Strict v2 dictionary validation ----------
+
+OVERRIDES.update({
+    "commute":"ездить на работу или учёбу; поездка на работу или учёбу",
+    "calculator":"калькулятор",
+    "culinary":"кулинарный",
+    "bun":"булочка; пучок волос",
+    "batter":"жидкое тесто; сильно бить",
+    "aha":"ага; вот оно что",
+    "antarctic":"антарктический",
+    "asteroid":"астероид",
+    "bedtime":"время ложиться спать",
+    "belongings":"личные вещи; имущество",
+    "blush":"румянец; краснеть",
+    "captivity":"плен; неволя",
+    "catastrophe":"катастрофа; бедствие",
+    "chemotherapy":"химиотерапия",
+    "concussion":"сотрясение мозга",
+    "consulate":"консульство",
+    "contend":"бороться; соперничать; утверждать",
+    "convict":"осуждённый; заключённый; признавать виновным",
+    "craving":"сильная тяга; страстное желание",
+    "din":"грохот; гул; сильный шум",
+    "windy":"ветреный",
+    "abruptly":"резко; внезапно",
+    "aquarium":"аквариум"
+})
+\n# ---------- Strict v2 dictionary validation ----------
 STRICT_REJECT = {
     "advertisement","advertisements","homepage","webpage","webpages","webmaster",
     "javascript","stylesheet","checkbox","dropdown","toolbar","webcam","webcast",
@@ -554,6 +580,22 @@ def pick_translation(word, top_raw, wik_raw, backup_raw):
             return v,src,"single_source"
     return "","","rejected"
 
+
+def load_person_names():
+    try:
+        z=zipfile.ZipFile(io.BytesIO(fetch_bytes(NAMES_URL)))
+        out=set()
+        for n in z.namelist():
+            if n.endswith("male.txt") or n.endswith("female.txt"):
+                for line in z.read(n).decode("utf-8","replace").splitlines():
+                    name=line.strip().lower()
+                    if re.fullmatch(r"[a-z]+",name):
+                        out.add(name)
+        return out
+    except Exception:
+        # Explicit fallback catches names that previously slipped through.
+        return {"irene","ned","john","david","james","michael","george","paul","peter","william","robert","thomas","louis","richard","joe","mary","charles","henry","martin","harry","steve","daniel","jim","ryan","adam","andrew","edward","joseph","stephen","howard","sarah","simon","elizabeth","jason","luke","jane","anthony","arthur","alexander","francis","gary","allen","matthew","patrick","walter","ann","bruce","ethan","frances"}
+
 def main():
     source = SOURCE_HTML.read_text(encoding="utf-8")
     m = re.search(r"const BASE_WORDS=(\[.*?\]);\nconst LEVELS", source, re.S)
@@ -605,6 +647,9 @@ def main():
             continue
         if w in seen:
             rejected["duplicate"]+=1
+            continue
+        if w in person_names and w not in COMMON_NAME_WORDS and w not in OVERRIDES:
+            rejected["invalid_word"]+=1
             continue
         ru,src,conf=pick_translation(w,top_map.get(w,""),wik_raw.get(w,""),backup.get(w,""))
         if not strict_translation_ok(ru):
