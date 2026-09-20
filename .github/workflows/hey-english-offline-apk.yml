@@ -74,8 +74,8 @@ jobs:
         working-directory: hey-english
         run: |
           mkdir -p app/src/main/res/drawable
-          cat ../chatgpt-assets/english-icon-small/part*.b64 | tr -d '\n\r' | base64 -d > app/src/main/res/drawable/app_icon.jpg
-          echo "a9db453783734ea52fb445d7a1af09dfccb95ad8f06bf2c7cd67b46f8d4d8c60  app/src/main/res/drawable/app_icon.jpg" | sha256sum -c -
+          tr -d '\n\r' < ../chatgpt-assets/english-icon-192.b64 | base64 -d > app/src/main/res/drawable/app_icon.jpg
+          echo "5b4a03de18dd897d0dbaf79ad2111ad9dd2515333b41b76787561875b24a582d  app/src/main/res/drawable/app_icon.jpg" | sha256sum -c -
 
       - name: Assemble installable APK
         working-directory: hey-english
