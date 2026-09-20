@@ -415,6 +415,90 @@ OVERRIDES.update({
     "aquarium":"аквариум"
 })
 
+OVERRIDES.update({
+    "death":"смерть",
+    "pretty":"красивый; симпатичный; довольно",
+    "bit":"немного; кусочек; бит",
+    "due":"должный; ожидаемый; из-за",
+    "deal":"сделка; договор; иметь дело",
+    "fine":"хороший; отличный; в порядке; штраф",
+    "sex":"пол; секс",
+    "died":"умер; умерла",
+    "film":"фильм; плёнка",
+    "likely":"вероятный; скорее всего",
+    "sense":"смысл; чувство; ощущение",
+    "design":"дизайн; проект; проектировать",
+    "relationship":"отношения; связь; взаимоотношения",
+    "production":"производство; продукция",
+    "rate":"ставка; тариф; скорость; оценивать",
+    "feeling":"чувство; ощущение",
+    "attention":"внимание",
+    "oil":"масло; нефть",
+    "stage":"этап; сцена",
+    "title":"название; заголовок; титул",
+    "situation":"ситуация; положение",
+    "legal":"законный; юридический",
+    "race":"гонка; раса",
+    "union":"союз; объединение; профсоюз",
+    "voice":"голос",
+    "writing":"письмо; написание; письменность",
+    "truth":"правда; истина",
+    "piece":"кусок; часть; произведение",
+    "studies":"исследования; учёба",
+    "safety":"безопасность",
+    "statement":"заявление; утверждение; выписка",
+    "author":"автор",
+    "claim":"утверждение; требование; заявлять",
+    "global":"мировой; глобальный",
+    "judge":"судья; судить; оценивать",
+    "letter":"буква; письмо",
+    "brain":"мозг",
+    "image":"изображение; образ",
+    "administration":"администрация; управление",
+    "civil":"гражданский; вежливый",
+    "master":"мастер; хозяин; овладевать",
+    "stock":"запас; акция; складской",
+    "wonder":"чудо; удивление; интересоваться",
+    "band":"группа; лента; полоса",
+    "operation":"операция; работа; действие",
+    "direct":"прямой; направлять; руководить",
+    "necessary":"необходимый",
+    "driving":"вождение; управляющий",
+    "feels":"чувствует; ощущения",
+    "male":"мужской; мужчина; самец",
+    "advice":"совет",
+    "primary":"основной; первичный",
+    "purpose":"цель; назначение",
+    "avoid":"избегать",
+    "executive":"исполнительный; руководитель",
+    "pop":"поп-музыка; хлопок; лопнуть",
+    "trial":"испытание; судебный процесс; пробный",
+    "activity":"деятельность; активность",
+    "freedom":"свобода",
+    "heat":"тепло; жара; нагревать",
+    "murder":"убийство; убивать",
+    "walking":"ходьба; идущий",
+    "broke":"сломал; обанкротился; без денег",
+    "fell":"упал; падал",
+    "prior":"предыдущий; предварительный",
+    "agreed":"согласился; согласованный",
+    "demand":"требование; спрос; требовать",
+    "keeping":"хранение; поддержание",
+    "square":"квадрат; квадратный; площадь",
+    "forced":"вынужденный; принудительный",
+    "scale":"масштаб; шкала; весы",
+    "score":"счёт; результат; балл",
+    "views":"взгляды; виды",
+    "acting":"актёрская игра; исполняющий обязанности",
+    "generation":"поколение; создание",
+    "spread":"распространять; распространение; намазка",
+    "supply":"снабжение; запас; поставлять",
+    "weird":"странный",
+    "silver":"серебро; серебряный",
+    "engineering":"инженерия; инженерное дело",
+    "tandem":"тандем; вместе; один за другим"
+})
+
 # ---------- Strict v2 dictionary validation ----------
 STRICT_REJECT = {
     "advertisement","advertisements","homepage","webpage","webpages","webmaster",
@@ -498,7 +582,16 @@ def strict_clean_translation(value):
             clean.append(p)
         if len(clean)>=4:
             break
-    out="; ".join(clean).strip(" ;,")
+    # Remove only stress marks (U+0301), preserving й/ё.
+    clean=[p.replace("\\u0301","") for p in clean]
+    dedup=[]
+    seen_ru=set()
+    for p in clean:
+        key=re.sub(r"\\s+"," ",p).strip().lower()
+        if key and key not in seen_ru:
+            seen_ru.add(key)
+            dedup.append(p)
+    out="; ".join(dedup).strip(" ;,")
     if len(out)>150:
         out=out[:150].rsplit(" ",1)[0].rstrip(" ,;:.")+"…"
     return out
@@ -543,9 +636,39 @@ def proper_name_like_translation(t):
         flags.append(bool(re.match(r"[А-ЯЁ]",ch)))
     return bool(flags) and all(flags)
 
+def split_ru_senses(v):
+    return [p.strip() for p in str(v or "").split(";") if p.strip()]
+
+def supported_senses(candidate, other_values):
+    out=[]
+    for sense in split_ru_senses(candidate):
+        stems=ru_stems(sense)
+        if not stems:
+            continue
+        support=0
+        for ov in other_values:
+            for other_sense in split_ru_senses(ov):
+                if stems.intersection(ru_stems(other_sense)):
+                    support+=1
+                    break
+        if support:
+            out.append((support,sense))
+    # Higher independent support first; preserve natural source order for ties.
+    out.sort(key=lambda x:-x[0])
+    result=[]
+    seen=set()
+    for support,sense in out:
+        key=sense.lower()
+        if key not in seen:
+            seen.add(key)
+            result.append(sense)
+        if len(result)>=3:
+            break
+    return result
+
 def pick_translation(word, top_raw, wik_raw, backup_raw):
     if word in OVERRIDES:
-        v=OVERRIDES[word]
+        v=OVERRIDES[word].replace("\u0301","")
         special={
             "gonna":"разговорное: собираюсь; буду",
             "wanna":"разговорное: хотеть",
@@ -560,21 +683,32 @@ def pick_translation(word, top_raw, wik_raw, backup_raw):
         if strict_translation_ok(v):
             vals.append((src,v,ru_stems(v),proper_name_like_translation(v)))
 
-    # If at least one source gives a normal lowercase lexical meaning, do not pick a
-    # capitalized personal/place/brand-name reading from another source.
+    # If at least one source gives a normal lexical meaning, ignore capitalized
+    # personal/place/brand-name readings.
     normal=[x for x in vals if not x[3]]
     if normal:
         vals=normal
     elif vals:
         return "","","rejected"
 
-    for i in range(len(vals)):
-        for j in range(i+1,len(vals)):
-            if vals[i][2] and vals[j][2] and vals[i][2].intersection(vals[j][2]):
-                pair=[vals[i],vals[j]]
-                pair.sort(key=lambda x:(0 if x[0]=="wikdict" else 1,len(x[1])))
-                return pair[0][1],pair[0][0],"cross_source"
+    # Compare at the INDIVIDUAL SENSE level. Previous versions could confirm one
+    # common sense, then accidentally keep unrelated rare senses from the same row.
+    cross=[]
+    for src,v,_,_ in vals:
+        others=[ov for osrc,ov,_,_ in vals if osrc!=src]
+        senses=supported_senses(v,others)
+        if senses:
+            candidate="; ".join(senses)
+            # Prefer WikDict wording when equally supported, then shorter learner text.
+            pref=0 if src=="wikdict" else 1 if src=="backup" else 2
+            cross.append((pref,len(candidate),src,candidate))
+    if cross:
+        cross.sort()
+        _,_,src,candidate=cross[0]
+        return candidate,src,"cross_source"
 
+    # No lexical agreement: high levels may still use a clean dictionary-only
+    # translation; A1/A2 reject these later and take the next nearby frequency word.
     for src,v,_,_ in vals:
         if src=="wikdict":
             return v,src,"single_source"
@@ -725,7 +859,7 @@ def main():
         prev=x["source_rank"]
 
     audit={
-        "audit_version":"strict-v2",
+        "audit_version":"strict-v3-sense-level",
         "total_words":len(full),
         "unique_words":len(set(keys)),
         "level_counts":actual,
