@@ -404,7 +404,7 @@ def ru_stems(t):
     return {w[:5] for w in words if w not in stop}
 
 def strict_translation_ok(t):
-    if not t or len(t)<2 or len(t)>160:
+    if not t or len(t)<1 or len(t)>160:
         return False
     if not re.search(r"[А-Яа-яЁё]",t):
         return False
