@@ -479,6 +479,16 @@ def main():
         if w and w not in backup:
             backup[w]=row.get("ru","")
 
+    # Use a larger, independent frequency list so rejected/noisy entries are
+    # replaced by the nearest normal-frequency word instead of relaxing validation.
+    from wordfreq import top_n_list
+    freq_words=top_n_list("en", 30000, ascii_only=True)
+    top_map={}
+    for row in top:
+        tw=normalize_word(row.get("word",""))
+        if tw and tw not in top_map:
+            top_map[tw]=row.get("translation","")
+
     selected=[]
     seen=set(base_seen)
     source_counts={"override":0,"top":0,"wikdict":0,"backup":0}
@@ -486,8 +496,7 @@ def main():
     rejected={"invalid_word":0,"duplicate":0,"no_clean_translation":0}
     selected_ranks=[]
 
-    for rank,row in enumerate(top,1):
-        raw_word=row.get("word","")
+    for rank,raw_word in enumerate(freq_words,1):
         w=strict_word(raw_word)
         if not w:
             rejected["invalid_word"]+=1
@@ -495,7 +504,7 @@ def main():
         if w in seen:
             rejected["duplicate"]+=1
             continue
-        ru,src,conf=pick_translation(w,row.get("translation",""),wik_raw.get(w,""),backup.get(w,""))
+        ru,src,conf=pick_translation(w,top_map.get(w,""),wik_raw.get(w,""),backup.get(w,""))
         if not strict_translation_ok(ru):
             rejected["no_clean_translation"]+=1
             continue
@@ -569,7 +578,7 @@ def main():
         "source_counts":source_counts,
         "confidence_counts":confidence_counts,
         "rejected_candidates":rejected,
-        "selection_strategy":"frequency-order; invalid/duplicate entries replaced by the next clean neighboring-frequency word in the same output level",
+        "selection_strategy":"wordfreq frequency-order; invalid/duplicate/noisy entries replaced by the next clean neighboring-frequency word while output level boundaries remain fixed",
         "last_selected_source_rank":selected_ranks[-1]["source_rank"],
         "max_neighbor_rank_gap":max(rank_gaps or [0]),
         "suspicious_after_final_audit":0,
