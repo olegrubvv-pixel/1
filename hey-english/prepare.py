@@ -310,6 +310,82 @@ def patch_html(source, full_words):
     return source
 
 
+
+# Additional American-English normalization used by the strict learner dictionary.
+AMERICAN.update({
+    "coloured":"colored","colouring":"coloring","colourful":"colorful",
+    "favour":"favor","favours":"favors","favoured":"favored",
+    "honours":"honors","honoured":"honored",
+    "flavours":"flavors","neighbourhood":"neighborhood","behaviours":"behaviors",
+    "rumours":"rumors","harbour":"harbor","harbours":"harbors","armour":"armor",
+    "centred":"centered","metres":"meters","litres":"liters","fibres":"fibers",
+    "analysed":"analyzed","analysing":"analyzing","realising":"realizing",
+    "recognised":"recognized","recognising":"recognizing",
+    "apologise":"apologize","apologised":"apologized",
+    "emphasise":"emphasize","emphasised":"emphasized",
+    "summarise":"summarize","summarised":"summarized",
+    "criticise":"criticize","criticised":"criticized",
+    "modelling":"modeling","modelled":"modeled",
+    "programmes":"programs","cheques":"checks","tyres":"tires",
+    "aeroplanes":"airplanes","maths":"math","cosy":"cozy","ageing":"aging",
+    "judgement":"judgment","fulfil":"fulfill","fulfilment":"fulfillment",
+    "enrol":"enroll","enrolment":"enrollment","aluminium":"aluminum",
+    "gaol":"jail","mould":"mold","plough":"plow"
+})
+BRITISH_ONLY={"petrol","lorry","postcode","mack"}
+
+OVERRIDES.update({
+    "the":"этот; тот; определённый артикль",
+    "its":"его; её; свой (для неодушевлённого)",
+    "than":"чем",
+    "should":"следует; должен; стоило бы",
+    "being":"бытие; являющийся; будучи",
+    "going":"идущий; собирающийся",
+    "since":"с тех пор как; поскольку; с",
+    "media":"средства массовой информации; медиа",
+    "led":"вёл; привёл; руководил",
+    "ball":"мяч; шар; бал",
+    "billion":"миллиард",
+    "fifth":"пятый",
+    "eighty":"восемьдесят",
+    "ninety":"девяносто",
+    "knocked":"постучал; стукнул; сбил",
+    "rode":"ехал; ездил; ехал верхом",
+    "strawberry":"клубника; земляника",
+    "steer":"управлять; направлять; рулить",
+    "tow":"буксировать; буксировка",
+    "thrill":"острое волнение; волновать",
+    "directive":"директива; указание",
+    "disadvantage":"недостаток; невыгодное положение",
+    "energetic":"энергичный",
+    "funk":"фанк; уныние; страх",
+    "badass":"разговорное: крутой; очень впечатляющий человек",
+    "upward":"вверх; направленный вверх",
+    "appoint":"назначать; определять на должность",
+    "crisp":"хрустящий; свежий; чёткий",
+    "delegate":"делегат; представитель; делегировать",
+    "expelled":"исключённый; выдворенный",
+    "flora":"флора; растительный мир",
+    "idle":"бездействующий; праздный; неработающий",
+    "jumper":"прыгун; сарафан без рукавов",
+    "hulk":"громила; огромная развалина",
+    "slick":"гладкий; скользкий; ловкий",
+    "virgin":"девственник; девственница; девственный",
+    "grace":"грация; изящество; благодать",
+    "miller":"мельник",
+    "smith":"кузнец",
+    "jean":"джинсовая ткань; джинсовый",
+    "fuck":"грубое: трахаться; испортить; чёрт",
+    "fucked":"грубое: испорченный; в тяжёлой ситуации",
+    "bullshit":"грубое: чушь; ерунда; враньё",
+    "dick":"грубое: пенис; неприятный человек",
+    "penis":"пенис; мужской половой орган",
+    "vagina":"влагалище; женский половой орган",
+    "shitty":"грубое: паршивый; ужасный",
+    "goddamn":"ругательное: проклятый; чёртов",
+    "cunt":"крайне грубое: женские гениталии; оскорбление"
+})
+
 # ---------- Strict v2 dictionary validation ----------
 STRICT_REJECT = {
     "advertisement","advertisements","homepage","webpage","webpages","webmaster",
@@ -326,7 +402,7 @@ def strict_word(raw):
     if original.isupper():
         return ""
     w = normalize_word(original)
-    if w in BANNED or w in STRICT_REJECT:
+    if w in BANNED or w in STRICT_REJECT or w in BRITISH_ONLY:
         return ""
     if len(w) < 3 or len(w) > 24:
         return ""
@@ -414,11 +490,29 @@ def strict_translation_ok(t):
         return False
     if re.search(r"[A-Za-z]{2,}",t):
         return False
+    if re.search(r"\d",t):
+        return False
+    if re.search(r"(?i)(?:^|[^а-яё])(?:хуй|хуя|хуе|пизд|ебан|ёбан|ебат|ёбат|бляд|блять|заёб|говня|сраный)(?:[^а-яё]|$)",t):
+        return False
     if t.count("(")!=t.count(")") or t.count("[")!=t.count("]"):
         return False
     if re.search(r"[(\[,;:/-]\s*$",t):
         return False
     return True
+
+
+def proper_name_like_translation(t):
+    pieces=[p.strip() for p in str(t or "").split(";") if p.strip()]
+    if not pieces:
+        return False
+    flags=[]
+    for p in pieces:
+        first=re.search(r"[А-Яа-яЁё]",p)
+        if not first:
+            continue
+        ch=first.group(0)
+        flags.append(bool(re.match(r"[А-ЯЁ]",ch)))
+    return bool(flags) and all(flags)
 
 def pick_translation(word, top_raw, wik_raw, backup_raw):
     if word in OVERRIDES:
@@ -435,7 +529,15 @@ def pick_translation(word, top_raw, wik_raw, backup_raw):
     for src,raw in (("top",top_raw),("wikdict",wik_raw),("backup",backup_raw)):
         v=strict_clean_translation(raw)
         if strict_translation_ok(v):
-            vals.append((src,v,ru_stems(v)))
+            vals.append((src,v,ru_stems(v),proper_name_like_translation(v)))
+
+    # If at least one source gives a normal lowercase lexical meaning, do not pick a
+    # capitalized personal/place/brand-name reading from another source.
+    normal=[x for x in vals if not x[3]]
+    if normal:
+        vals=normal
+    elif vals:
+        return "","","rejected"
 
     for i in range(len(vals)):
         for j in range(i+1,len(vals)):
@@ -444,10 +546,10 @@ def pick_translation(word, top_raw, wik_raw, backup_raw):
                 pair.sort(key=lambda x:(0 if x[0]=="wikdict" else 1,len(x[1])))
                 return pair[0][1],pair[0][0],"cross_source"
 
-    for src,v,_ in vals:
+    for src,v,_,_ in vals:
         if src=="wikdict":
             return v,src,"single_source"
-    for src,v,_ in vals:
+    for src,v,_,_ in vals:
         if src=="backup" and len(v)<=70:
             return v,src,"single_source"
     return "","","rejected"
@@ -509,6 +611,9 @@ def main():
             rejected["no_clean_translation"]+=1
             continue
         idx=len(base)+len(selected)
+        if idx<3000 and conf=="single_source":
+            rejected["no_clean_translation"]+=1
+            continue
         level="A1" if idx<1500 else "A2" if idx<3000 else "B1" if idx<5000 else "B2"
         selected.append({"en":w,"ru":ru,"cat":"US словарь"})
         selected_ranks.append({"word":w,"source_rank":rank,"output_rank":idx+1,"level":level,"translation_source":src,"confidence":conf})
