@@ -332,7 +332,9 @@ AMERICAN.update({
     "enrol":"enroll","enrolment":"enrollment","aluminium":"aluminum",
     "gaol":"jail","mould":"mold","plough":"plow"
 })
-BRITISH_ONLY={"petrol","lorry","postcode","mack"}\nNAMES_URL = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/names.zip"\nCOMMON_NAME_WORDS={"will","bill","mark","rose","grace","hope","faith","joy","summer","may","april","june","august","hunter","mason","grant","frank","victor","robin","dawn","crystal","amber","pearl","violet","lily","olive","cherry","clay","dean","dale","lance","drew","chase","sky","river","brook","melody","harmony","charity","patience","angel","art","ray","gene","jean","cliff","forest","wood","stone","reed","lane","candy","ginger","holly","ivy","iris","jasmine","hazel","ruby","opal","autumn","winter"}
+BRITISH_ONLY={"petrol","lorry","postcode","mack"}
+NAMES_URL = "https://raw.githubusercontent.com/nltk/nltk_data/gh-pages/packages/corpora/names.zip"
+COMMON_NAME_WORDS={"will","bill","mark","rose","grace","hope","faith","joy","summer","may","april","june","august","hunter","mason","grant","frank","victor","robin","dawn","crystal","amber","pearl","violet","lily","olive","cherry","clay","dean","dale","lance","drew","chase","sky","river","brook","melody","harmony","charity","patience","angel","art","ray","gene","jean","cliff","forest","wood","stone","reed","lane","candy","ginger","holly","ivy","iris","jasmine","hazel","ruby","opal","autumn","winter"}
 
 OVERRIDES.update({
     "the":"этот; тот; определённый артикль",
