@@ -414,7 +414,8 @@ OVERRIDES.update({
     "abruptly":"резко; внезапно",
     "aquarium":"аквариум"
 })
-\n# ---------- Strict v2 dictionary validation ----------
+
+# ---------- Strict v2 dictionary validation ----------
 STRICT_REJECT = {
     "advertisement","advertisements","homepage","webpage","webpages","webmaster",
     "javascript","stylesheet","checkbox","dropdown","toolbar","webcam","webcast",
